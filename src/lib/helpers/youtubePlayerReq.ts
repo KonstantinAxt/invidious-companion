@@ -97,6 +97,12 @@ export const youtubePlayerReq = async (
                         .adaptiveFormats[0].signatureCipher
                 )
             ) {
+                const fallbackFormats =
+                    youtubePlayerResponseFallback.data.streamingData.formats;
+                if (fallbackFormats?.length) {
+                    youtubePlayerResponse.data.streamingData.formats =
+                        fallbackFormats;
+                }
                 youtubePlayerResponse.data.streamingData.adaptiveFormats =
                     youtubePlayerResponseFallback.data.streamingData
                         .adaptiveFormats;
