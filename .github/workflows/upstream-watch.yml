@@ -1,0 +1,86 @@
+name: Watch invidious upstream
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check upstream state
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          invidious_latest="$(gh api repos/iv-org/invidious/releases/latest --jq '.tag_name + " (" + .published_at + ")"')"
+          companion_master="$(gh api repos/iv-org/invidious-companion/commits/master --jq '.sha[0:7] + " (" + .commit.author.date + ")"')"
+          pr_360="$(gh api repos/iv-org/invidious-companion/pulls/360 --jq '.state + " merged=" + (.merged|tostring) + " updated=" + .updated_at')"
+          unixfox_head="$(gh api repos/unixfox/invidious-companion/commits/camoufox-support-potoken --jq '.sha[0:7]' 2>/dev/null || echo "branch not found (likely merged/deleted)")"
+
+          state_file=".github/upstream-watch-state.txt"
+          new_state="invidious_latest_release=${invidious_latest}
+          companion_master_head=${companion_master}
+          pr_360_status=${pr_360}
+          unixfox_branch_head=${unixfox_head}"
+
+          old_state=""
+          if [ -f "$state_file" ]; then old_state="$(cat "$state_file")"; fi
+
+          printf '%s\n' "$new_state" > "$state_file"
+
+          if [ "$old_state" != "$new_state" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          {
+            echo "body<<EOF"
+            printf '%s\n' "$new_state"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Commit updated state
+        if: steps.state.outputs.changed == 'true'
+        run: |
+          git config user.name "upstream-watch-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .github/upstream-watch-state.txt
+          git commit -m "chore: update upstream watch state"
+          git push
+
+      - name: Open or update tracking issue
+        if: steps.state.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BODY: ${{ steps.state.outputs.body }}
+        run: |
+          title="Upstream watch: invidious / invidious-companion status changed"
+          full_body="Automated check detected a change upstream.
+
+          \`\`\`
+          ${BODY}
+          \`\`\`
+
+          - [iv-org/invidious releases](https://github.com/iv-org/invidious/releases)
+          - [iv-org/invidious-companion master](https://github.com/iv-org/invidious-companion/commits/master)
+          - [PR #360 (Camoufox potoken)](https://github.com/iv-org/invidious-companion/pull/360)
+          - [unixfox/camoufox-support-potoken](https://github.com/unixfox/invidious-companion/tree/camoufox-support-potoken)
+          "
+
+          existing="$(gh issue list --search "in:title \"${title}\"" --state open --json number --jq '.[0].number')"
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh issue comment "$existing" --body "$full_body"
+          else
+            gh issue create --title "$title" --body "$full_body"
+          fi
