@@ -51,6 +51,12 @@ async function generatePoToken(
     metrics: Metrics | undefined,
 ): Promise<PoTokenResult> {
     const fetchImpl = getFetchClient(config);
+    if (Deno.env.get("POTOKEN_BACKEND") === "jsdom") {
+        console.warn(
+            "[WARN] POTOKEN_BACKEND=jsdom set; skipping Camoufox and using the JSDOM PO token method",
+        );
+        return await generateWithJSDOM(config, metrics);
+    }
     let generation;
     try {
         generation = await createCamoufoxPoTokenGeneration(
