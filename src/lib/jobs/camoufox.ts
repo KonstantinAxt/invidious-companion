@@ -1,4 +1,5 @@
 import { Innertube } from "youtubei.js";
+import { firefox } from "playwright-core";
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import { PLAYER_ID } from "../../constants.ts";
 import {
@@ -14,11 +15,11 @@ import {
     mintOnPage,
     runBotGuard,
 } from "../potoken/browserPage.ts";
-import {
-    installCamoufox,
-    isConfiguredCamoufoxInstalled,
-} from "../camoufox/packageManager.ts";
 import { launchCamoufox } from "../camoufox/browser.ts";
+import {
+    fingerprintOperatingSystem,
+    prepareCamoufoxInstall,
+} from "../camoufox/install.ts";
 import { BrowserPoTokenUnavailableError } from "../potoken/errors.ts";
 
 export interface CamoufoxPoTokenGeneration {
@@ -219,19 +220,29 @@ class CamoufoxPoTokenRuntime {
         }
 
         await this.closeBrowser();
-        const installDirectory = configureInstallDirectory();
-        if (Deno.build.os === "linux" && installDirectory) {
-            await configureTemporaryDirectory();
-            await ensureCamoufoxInstalled(installDirectory);
-        }
+
+        const remoteEndpoint = Deno.env.get("CAMOUFOX_REMOTE_WS_ENDPOINT");
         let browser: Browser;
-        try {
-            browser = await launchCamoufox(fingerprintOperatingSystem());
-        } catch (error) {
-            throw new BrowserPoTokenUnavailableError(
-                "Camoufox could not be imported or launched",
-                { cause: error },
-            );
+        let installDirectory: string | undefined;
+        if (remoteEndpoint) {
+            try {
+                browser = await firefox.connect(remoteEndpoint);
+            } catch (error) {
+                throw new BrowserPoTokenUnavailableError(
+                    "Could not connect to remote Camoufox server",
+                    { cause: error },
+                );
+            }
+        } else {
+            installDirectory = await prepareCamoufoxInstall();
+            try {
+                browser = await launchCamoufox(fingerprintOperatingSystem());
+            } catch (error) {
+                throw new BrowserPoTokenUnavailableError(
+                    "Camoufox could not be imported or launched",
+                    { cause: error },
+                );
+            }
         }
 
         try {
@@ -306,70 +317,4 @@ export function createCamoufoxPoTokenGeneration(
 
 export function closeCamoufoxPoTokenRuntime(): Promise<void> {
     return runtime.close();
-}
-
-function configureInstallDirectory(): string | undefined {
-    let installDirectory = Deno.env.get("CAMOUFOX_INSTALL_DIR");
-    if (!installDirectory && Deno.build.os === "linux") {
-        installDirectory = "/var/tmp/youtubei.js/camoufox";
-        Deno.env.set("CAMOUFOX_INSTALL_DIR", installDirectory);
-    }
-    return installDirectory;
-}
-
-async function configureTemporaryDirectory(): Promise<void> {
-    if (Deno.env.has("TMPDIR")) return;
-    const tempDirectory = "/var/tmp/youtubei.js/tmp";
-    try {
-        await Deno.mkdir(tempDirectory, { recursive: true });
-        Deno.env.set("TMPDIR", tempDirectory);
-    } catch (error) {
-        throw new BrowserPoTokenUnavailableError(
-            `Camoufox temporary directory could not be created at ${tempDirectory}`,
-            { cause: error },
-        );
-    }
-}
-
-async function ensureCamoufoxInstalled(
-    installDirectory: string,
-): Promise<void> {
-    try {
-        if (await isConfiguredCamoufoxInstalled(installDirectory)) return;
-    } catch (error) {
-        if (browserDownloadDisabled()) {
-            throw new BrowserPoTokenUnavailableError(
-                `Camoufox is not installed at ${installDirectory}`,
-                { cause: error },
-            );
-        }
-    }
-
-    console.log("[INFO] Camoufox is not installed; downloading it", {
-        installDirectory,
-    });
-    try {
-        await installCamoufox(installDirectory);
-
-        const executable = await Deno.stat(
-            `${installDirectory}/camoufox-bin`,
-        );
-        if (!executable.isFile) throw new Error("not a file");
-    } catch (error) {
-        throw new BrowserPoTokenUnavailableError(
-            `Camoufox could not be installed at ${installDirectory}`,
-            { cause: error },
-        );
-    }
-}
-
-function browserDownloadDisabled(): boolean {
-    const value = Deno.env.get("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD");
-    return Boolean(value && value !== "0" && value !== "false");
-}
-
-function fingerprintOperatingSystem(): "linux" | "macos" | "windows" {
-    if (Deno.build.os === "darwin") return "macos";
-    if (Deno.build.os === "windows") return "windows";
-    return "linux";
 }

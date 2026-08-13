@@ -1,13 +1,13 @@
-import { type Browser, firefox } from "playwright-core";
+import { type Browser, firefox, type LaunchOptions } from "playwright-core";
 import { sampleWebGL } from "./webgl.ts";
 
 type FingerprintOperatingSystem = "linux" | "macos" | "windows";
 
 const CAMOU_CONFIG_PREFIX = "CAMOU_CONFIG_";
 
-export async function launchCamoufox(
+export async function buildCamoufoxLaunchOptions(
     operatingSystem: FingerprintOperatingSystem,
-): Promise<Browser> {
+): Promise<LaunchOptions> {
     const { launchOptions } = await import("camoufox-js");
     const webGLFingerprint = sampleWebGL(toCamoufoxOperatingSystem(
         operatingSystem,
@@ -39,7 +39,15 @@ export async function launchCamoufox(
         operatingSystem === "windows" ? 2_047 : 32_767,
     );
 
-    return await firefox.launch(options);
+    return options;
+}
+
+export async function launchCamoufox(
+    operatingSystem: FingerprintOperatingSystem,
+): Promise<Browser> {
+    return await firefox.launch(
+        await buildCamoufoxLaunchOptions(operatingSystem),
+    );
 }
 
 function injectFingerprint(
