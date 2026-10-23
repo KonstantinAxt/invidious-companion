@@ -1,4 +1,4 @@
-invidious_latest_release=v2.20260804.1 (2026-08-05T01:04:46Z)
+invidious_latest_release=v2.20261022.0 (2026-10-22T22:45:26Z)
 companion_master_head=fcb0456 (2026-10-18T22:11:45Z)
 pr_360_status=open merged=false updated=2026-09-28T21:27:27Z
 unixfox_branch_head=95a8440
